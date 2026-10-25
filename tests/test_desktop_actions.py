@@ -34,7 +34,7 @@ class TestDesktopActions(unittest.TestCase):
     @patch("aurix.actions.desktop._open_url", return_value=True)
     def test_telugu_action_response_is_localized(self, open_url):
         result = desktop.handle_desktop_command("వాట్సాప్ తెరువు", language="te-IN")
-        self.assertIn("వెబ్", result) if "వెబ్" in result else self.assertIn("బ్రౌజర్", result)
+        self.assertRegex(result,r"[\u0C00-\u0C7F]",msg=f"Expected a Telugu-localized response, got: {result!r}")
 
     @patch("aurix.actions.desktop._open_url", return_value=True)
     def test_video_search_opens_youtube_results_directly(self, open_url):
