@@ -4,6 +4,8 @@ import logging
 import time
 from typing import Any
 
+from aurix.actions.desktop import handle_desktop_command
+
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -14,6 +16,8 @@ from openai import (
     PermissionDeniedError,
     RateLimitError,
 )
+
+from aurix.actions.desktop import try_handle_desktop_command
 
 from aurix.config import (
     AI_API_KEY,
@@ -30,9 +34,11 @@ SYSTEM_PROMPT = (
     "You are AURIX, a personal AI assistant. Respond in clear, natural, "
     "concise language suitable for a voice interface. Be honest about "
     "uncertainty. Do not claim to have opened applications, sent messages, "
-    "changed files, or retrieved live market data unless a real integration "
-    "performed and verified that action. Desktop actions and market-data "
-    "integrations are not connected yet."
+    "changed files, or retrieved live data unless a real integration "
+    "performed and verified that action. Basic allowlisted browser and "
+    "Windows app launches are handled by the local desktop action router. "
+    "Other desktop actions are not implemented; explain those limitations "
+    "honestly."
 )
 
 
@@ -205,15 +211,29 @@ _assistant: AurixAssistant | None = None
 
 
 def handle_command(command: str) -> str:
-    """Called by the voice loop; always returns text suitable for display."""
+    """Route approved desktop actions; send other requests to the AI."""
     global _assistant
+
+    action_response = try_handle_desktop_command(command)
+    if action_response is not None:
+        return action_response
+
     try:
+        action_response = handle_desktop_command(command)
+
+        if action_response is not None:
+            logger.info("Handled a desktop action.")
+            return action_response
+
         if _assistant is None:
             _assistant = AurixAssistant()
+
         return _assistant.ask(command)
+
     except (AIConfigurationError, AIServiceError) as exc:
         logger.warning("AURIX AI request failed: %s", exc)
         return f"I couldn't answer that: {exc}"
+
     except Exception:
-        logger.exception("Unexpected error in AURIX conversation engine.")
-        return "I hit an unexpected error while answering. Check the terminal log."
+        logger.exception("Unexpected error in AURIX command handling.")
+        return "I hit an unexpected error while processing your request."
