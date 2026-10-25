@@ -1,15 +1,13 @@
-"""Entry point for the AURIX AI Assistant."""
+"""AURIX voice assistant entry point."""
 
 from aurix.voice import run_voice_loop
 
 
 def main() -> None:
-    """Start AURIX."""
-    print("=" * 48)
-    print("             AURIX AI ASSISTANT")
-    print("=" * 48)
-    print("Starting voice pipeline...")
-
+    print("=" * 48, flush=True)
+    print("             AURIX AI ASSISTANT", flush=True)
+    print("=" * 48, flush=True)
+    print("Starting voice pipeline...", flush=True)
     run_voice_loop()
 
 

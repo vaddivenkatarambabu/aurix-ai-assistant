@@ -1,4 +1,5 @@
 """Load AURIX configuration from environment variables and .env."""
+from __future__ import annotations
 
 import os
 
@@ -48,29 +49,20 @@ AI_BASE_URL = (
     or os.getenv("GROQ_BASE_URL")
     or ""
 ).strip()
-
-# The gpt-oss model identifier used in this project is served by Groq.
-# Use Groq's OpenAI-compatible endpoint if the base URL was not specified.
 if not AI_BASE_URL and "gpt-oss" in OPENAI_MODEL.lower():
     AI_BASE_URL = "https://api.groq.com/openai/v1"
 
-AURIX_REQUIRE_WAKE_WORD = _bool_setting(
-    "AURIX_REQUIRE_WAKE_WORD", default=False
-)
+AURIX_REQUIRE_WAKE_WORD = _bool_setting("AURIX_REQUIRE_WAKE_WORD", default=False)
 AURIX_WAKE_WORD = os.getenv("AURIX_WAKE_WORD", "aurix").strip().lower()
 AURIX_SPEECH_LANGUAGE = os.getenv("AURIX_SPEECH_LANGUAGE", "en-US").strip()
 AURIX_CONVERSATION_WINDOW_SECONDS = _int_setting(
     "AURIX_CONVERSATION_WINDOW_SECONDS", 30, minimum=1
 )
-AURIX_MAX_HISTORY_TURNS = _int_setting(
-    "AURIX_MAX_HISTORY_TURNS", 8, minimum=1
-)
-AURIX_REQUEST_TIMEOUT_SECONDS = _float_setting(
-    "AURIX_REQUEST_TIMEOUT_SECONDS", 25.0
-)
+AURIX_MAX_HISTORY_TURNS = _int_setting("AURIX_MAX_HISTORY_TURNS", 8, minimum=1)
+AURIX_REQUEST_TIMEOUT_SECONDS = _float_setting("AURIX_REQUEST_TIMEOUT_SECONDS", 25.0)
 AURIX_MAX_API_RETRIES = _int_setting("AURIX_MAX_API_RETRIES", 1, minimum=0)
 AURIX_TTS_ENABLED = _bool_setting("AURIX_TTS_ENABLED", default=True)
 AURIX_LOG_LEVEL = os.getenv("AURIX_LOG_LEVEL", "INFO").upper()
 
-# Backwards-compatible alias for code that used the old name.
+# Backwards-compatible alias for older modules.
 OPENAI_API_KEY = AI_API_KEY

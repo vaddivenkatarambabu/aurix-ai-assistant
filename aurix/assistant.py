@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Any
 
-from aurix.actions.desktop import handle_desktop_command
+from aurix.actions.desktop import try_handle_desktop_command
 
 from openai import (
     APIConnectionError,
@@ -16,8 +16,6 @@ from openai import (
     PermissionDeniedError,
     RateLimitError,
 )
-
-from aurix.actions.desktop import try_handle_desktop_command
 
 from aurix.config import (
     AI_API_KEY,
@@ -31,17 +29,15 @@ from aurix.config import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are AURIX, a personal AI assistant. Respond in clear, natural, "
-    "concise language suitable for a voice interface. Be honest about "
-    "uncertainty. Do not claim to have opened applications, sent messages, "
-    "changed files, or retrieved live data unless a real integration "
-    "performed and verified that action. Basic allowlisted browser and "
-    "Windows app launches are handled by the local desktop action router. "
-    "Other desktop actions are not implemented; explain those limitations "
-    "honestly."
+    "You are AURIX, a personal AI assistant. Respond in clear, natural, concise language. "
+    "Respond in the same language and script as the user's latest message when possible. "
+    "Support multilingual conversation including Telugu, Spanish, Hindi, and other languages. "
+    "Be honest about uncertainty. Do not claim to have launched an application unless the local "
+    "desktop action router reports that launch succeeded. Do not claim to have sent messages, "
+    "changed files, or retrieved live data unless a real integration performed and verified it. "
+    "Application launches and direct web/video searches are handled by the local action router. "
+    "Do not ask the user to run arbitrary shell commands and do not generate executable shell text."
 )
-
-
 class AIConfigurationError(RuntimeError):
     """Raised when required AI configuration is missing."""
 
@@ -210,30 +206,22 @@ class AurixAssistant:
 _assistant: AurixAssistant | None = None
 
 
-def handle_command(command: str) -> str:
-    """Route approved desktop actions; send other requests to the AI."""
+def handle_command(command: str, language: str | None = None) -> str:
+    """Route local desktop/video actions first; send all other text to the AI."""
     global _assistant
-
-    action_response = try_handle_desktop_command(command)
-    if action_response is not None:
-        return action_response
-
     try:
-        action_response = handle_desktop_command(command)
-
+        action_response = try_handle_desktop_command(command, language=language)
         if action_response is not None:
-            logger.info("Handled a desktop action.")
+            logger.info("Handled a local desktop or browser action.")
             return action_response
 
         if _assistant is None:
             _assistant = AurixAssistant()
-
         return _assistant.ask(command)
 
     except (AIConfigurationError, AIServiceError) as exc:
-        logger.warning("AURIX AI request failed: %s", exc)
+        logger.warning("AURIX request failed: %s", exc)
         return f"I couldn't answer that: {exc}"
-
     except Exception:
         logger.exception("Unexpected error in AURIX command handling.")
-        return "I hit an unexpected error while processing your request."
+        return "AURIX encountered an unexpected error. Check the terminal log."

@@ -36,7 +36,7 @@ def extract_wake_command(
 
 
 def _make_speaker() -> Any | None:
-    """Create optional text-to-speech without making it a startup dependency."""
+    """Create optional local Windows speech output without blocking startup."""
     if not AURIX_TTS_ENABLED:
         return None
     try:
@@ -45,13 +45,13 @@ def _make_speaker() -> Any | None:
         engine = pyttsx3.init()
         engine.setProperty("rate", 175)
         return engine
-    except Exception as exc:  # TTS must not prevent the text conversation from working.
+    except Exception as exc:
         print(f"[TTS Notice] Speech output is unavailable: {exc}", flush=True)
         return None
 
 
 def _respond(text: str, speaker: Any | None) -> None:
-    """Display every response; speak it when TTS is available."""
+    """Display every response and speak it when local TTS is available."""
     print(f"\nAURIX: {text}\n", flush=True)
     if speaker is not None:
         try:
@@ -82,6 +82,7 @@ def run_voice_loop() -> None:
         with microphone as source:
             recognizer.adjust_for_ambient_noise(source, duration=0.8)
             print("\nAURIX is ready.", flush=True)
+            print(f"Speech recognition language: {AURIX_SPEECH_LANGUAGE}", flush=True)
             if AURIX_REQUIRE_WAKE_WORD:
                 print(
                     f"Say '{AURIX_WAKE_WORD.upper()}' first; conversation stays active "
@@ -90,8 +91,7 @@ def run_voice_loop() -> None:
                 )
             else:
                 print(
-                    "Conversational mode is enabled: recognized speech is sent to the AI. "
-                    "Set AURIX_REQUIRE_WAKE_WORD=true in .env to require the wake word.",
+                    "Conversational mode is enabled: recognized speech is sent to the AI.",
                     flush=True,
                 )
             print("Say 'exit' or press Ctrl+C to stop.\n", flush=True)
@@ -100,21 +100,19 @@ def run_voice_loop() -> None:
             while True:
                 try:
                     print("Listening...", flush=True)
-                    audio = recognizer.listen(
-                        source,
-                        timeout=1,
-                        phrase_time_limit=8,
-                    )
+                    audio = recognizer.listen(source, timeout=1, phrase_time_limit=8)
                 except sr.WaitTimeoutError:
                     continue
 
                 try:
                     transcript = recognizer.recognize_google(
-                        audio,
-                        language=AURIX_SPEECH_LANGUAGE,
+                        audio, language=AURIX_SPEECH_LANGUAGE
                     ).strip()
                 except sr.UnknownValueError:
-                    print("[Voice] Speech was not understood; try speaking closer to the mic.", flush=True)
+                    print(
+                        "[Voice] Speech was not understood; try speaking closer to the mic.",
+                        flush=True,
+                    )
                     continue
                 except sr.RequestError as exc:
                     print(
@@ -141,8 +139,7 @@ def run_voice_loop() -> None:
                     command = wake_command
                 elif AURIX_REQUIRE_WAKE_WORD and now > awake_until:
                     print(
-                        f"[AURIX] No response because '{AURIX_WAKE_WORD}' was not detected. "
-                        "Say the wake word or set AURIX_REQUIRE_WAKE_WORD=false in .env.",
+                        f"[AURIX] No response because '{AURIX_WAKE_WORD}' was not detected.",
                         flush=True,
                     )
                     continue
@@ -159,14 +156,12 @@ def run_voice_loop() -> None:
                     print("[AURIX] Shutting down.", flush=True)
                     break
 
-                # Show what will be sent to the AI so ignored/misheard speech is visible.
                 if command.casefold() != transcript.casefold():
                     print(f"You asked: {command}", flush=True)
 
                 response = handle_command(command)
                 _respond(response, speaker)
                 if AURIX_REQUIRE_WAKE_WORD:
-                    # Keep a short conversation window open for follow-up questions.
                     awake_until = time.monotonic() + AURIX_CONVERSATION_WINDOW_SECONDS
 
     except KeyboardInterrupt:
