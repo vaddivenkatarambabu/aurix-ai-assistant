@@ -1,0 +1,8 @@
+.env.example
+README.md
+aurix/actions/desktop.py
+aurix/assistant.py
+aurix/config.py
+aurix/main.py
+aurix/voice.py
+tests/test_desktop_actions.py
