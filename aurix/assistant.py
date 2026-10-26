@@ -1,10 +1,19 @@
 """AI conversation engine for AURIX, compatible with OpenAI-style APIs."""
 
+import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from aurix.actions.desktop import try_handle_desktop_command
+
+from aurix.integrations.market_data import (
+    MarketDataError,
+    extract_market_data_symbol,
+    fetch_daily_market_data,
+    format_market_data_response,
+)
 
 from openai import (
     APIConnectionError,
@@ -38,6 +47,17 @@ SYSTEM_PROMPT = (
     "Application launches and direct web/video searches are handled by the local action router. "
     "Do not ask the user to run arbitrary shell commands and do not generate executable shell text."
 )
+
+MARKET_ANALYSIS_SYSTEM_PROMPT = (
+    "You are AURIX's market-data explainer. You receive a JSON object with source_facts and "
+    "derived_metrics supplied by the application. Use only those supplied values. Keep source-reported "
+    "observations distinct from application-calculated metrics. Never invent a currency, exchange, quote "
+    "timestamp, current/live status, market event, news, causal explanation, forecast, or missing number. "
+    "If the observation is stale or freshness is unknown, say so. Do not give buy/sell/hold recommendations. "
+    "Do not treat end-of-day data as real-time data. Explain the available facts briefly and acknowledge "
+    "when the data cannot support a conclusion. This is informational analysis, not financial advice."
+)
+
 class AIConfigurationError(RuntimeError):
     """Raised when required AI configuration is missing."""
 
@@ -198,6 +218,64 @@ class AurixAssistant:
 
         raise AIServiceError("AURIX could not complete the request.")
 
+
+    def analyze_market_data(self, market_payload: dict[str, Any]) -> str:
+        """Generate commentary from validated source facts without sending chat history."""
+        try:
+            inputs = {
+                "source_facts": market_payload["source_facts"],
+                "derived_metrics": market_payload["derived_metrics"],
+            }
+        except (KeyError, TypeError) as exc:
+            raise AIServiceError("Market-data analysis input is missing validated data.") from exc
+
+        messages = [
+            {"role": "system", "content": MARKET_ANALYSIS_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "Explain the following validated market data in at most 120 words. "
+                    "State what the figures show without forecasting. The JSON fields below are "
+                    "the complete evidence available; do not add external facts.\n"
+                    + json.dumps(inputs, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                ),
+            },
+        ]
+        client = self._get_client()
+        for attempt in range(self.max_api_retries + 1):
+            try:
+                result = client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_completion_tokens=220,
+                )
+                content = result.choices[0].message.content
+                answer = content.strip() if isinstance(content, str) else ""
+                if not answer:
+                    raise AIServiceError("The AI service returned empty market commentary.")
+                return answer
+            except RateLimitError as exc:
+                if _looks_like_quota_error(exc):
+                    raise AIServiceError("AI market commentary is unavailable because the API quota may be exhausted.") from exc
+                if attempt >= self.max_api_retries:
+                    raise AIServiceError("AI market commentary is temporarily rate-limited.") from exc
+                delay = min(2**attempt, 3)
+                logger.warning("Market commentary rate-limited; retrying in %s second(s).", delay)
+                time.sleep(delay)
+            except AuthenticationError as exc:
+                raise AIServiceError("AI market commentary could not authenticate; check AI_API_KEY.") from exc
+            except PermissionDeniedError as exc:
+                raise AIServiceError("The AI provider denied access to the configured model.") from exc
+            except (APITimeoutError, APIConnectionError, InternalServerError) as exc:
+                if attempt >= self.max_api_retries:
+                    raise AIServiceError("AI market commentary timed out or the provider could not be reached.") from exc
+                delay = min(2**attempt, 3)
+                logger.warning("Temporary market-analysis failure (%s); retrying in %s second(s).", type(exc).__name__, delay)
+                time.sleep(delay)
+            except APIStatusError as exc:
+                raise AIServiceError(f"The AI provider returned HTTP {exc.status_code} during market analysis.") from exc
+        raise AIServiceError("AURIX could not generate market commentary.")
+
     def clear_history(self) -> None:
         """Clear the in-memory conversation history."""
         self.history.clear()
@@ -214,6 +292,44 @@ def handle_command(command: str, language: str | None = None) -> str:
         if action_response is not None:
             logger.info("Handled a local desktop or browser action.")
             return action_response
+
+        symbol = extract_market_data_symbol(command)
+        if symbol is not None:
+            try:
+                snapshot = fetch_daily_market_data(symbol)
+            except MarketDataError as exc:
+                logger.warning("Market-data request failed: %s", exc)
+                return f"Market data unavailable: {exc}"
+
+            payload = snapshot.to_payload()
+            try:
+                if _assistant is None:
+                    _assistant = AurixAssistant()
+                analysis = _assistant.analyze_market_data(payload)
+                payload["generated_analysis"] = {
+                    "status": "generated",
+                    "text": analysis,
+                    "model": _assistant.model,
+                    "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                    "input_refs": ["source_facts", "derived_metrics"],
+                }
+            except (AIConfigurationError, AIServiceError) as exc:
+                logger.warning("AI analysis unavailable for market data: %s", exc)
+                payload["generated_analysis"] = {
+                    "status": "unavailable",
+                    "text": None,
+                    "reason": str(exc),
+                    "input_refs": ["source_facts", "derived_metrics"],
+                }
+            except Exception:
+                logger.exception("Unexpected error generating market-data analysis.")
+                payload["generated_analysis"] = {
+                    "status": "unavailable",
+                    "text": None,
+                    "reason": "AI analysis could not be generated; source facts and calculations remain available.",
+                    "input_refs": ["source_facts", "derived_metrics"],
+                }
+            return format_market_data_response(payload)
 
         if _assistant is None:
             _assistant = AurixAssistant()
