@@ -8,7 +8,9 @@ Current capabilities
 - Bounded, in-memory conversation history. History is lost when AURIX exits; it is not persisted to a database or file.
 - Optional local text-to-speech through pyttsx3.
 - Windows-first application discovery and launching from Start Menu shortcuts, Windows' Get-StartApps inventory, registered application paths, selected known installation locations, and PATH.
-- Website fallback for known applications or URLs when a desktop app cannot be found.
+- Explicit website mappings opened through the operating system's default browser.
+- Separate application-versus-website intent: say "open Chrome app" to launch an installed app or "open Google website" to open a website.
+- Configured Jio website mapping: https://www.jio.com/.
 - YouTube search and web search through the default browser.
 - Guardrails that reject direct executable/script paths from spoken input and avoid passing voice commands to a shell.
 Requirements and setup
@@ -63,7 +65,7 @@ Search YouTube for Python tutorial
 Play lofi hip hop on YouTube
 The parser also contains selected command patterns in Spanish, French, Hindi, and Telugu, for example abre WhatsApp, ouvre Firefox, व्हाट्सएप खोलो, and వాట్సాప్ తెరువు. This is limited command-pattern coverage, not complete multilingual support.
 
-For known applications, AURIX attempts to find and launch the installed app first. If the app cannot be found and a known web counterpart exists, it may open that website instead. Open browser opens a blank tab in the default browser. YouTube commands open a YouTube search results page, not a guaranteed specific video.
+Known service names such as Google, Jio, ChatGPT, YouTube, GitHub, and WhatsApp open their configured URL in the operating system's default browser. Say "open Chrome app" or "open Spotify app" when you specifically want to launch an installed desktop application instead. Unknown names are not guessed into website URLs; provide an explicit domain such as "open example.com" or name a configured website. Open browser opens a blank tab in the default browser. YouTube commands open a YouTube search results page, not a guaranteed specific video.
 
 Application discovery varies by Windows installation, app packaging, Start Menu shortcuts, registration, and permissions. AURIX may not be able to discover every installed app. For safety, direct executable paths, shell scripts, and arbitrary commands spoken as text are rejected rather than executed through a shell.
 Language support: what is and is not implemented
