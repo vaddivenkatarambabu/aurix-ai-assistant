@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Pin quality tooling so CI and local checks use the same tool versions.
+ruff==0.17.2
+pip-audit==2.10.1

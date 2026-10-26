@@ -25,3 +25,13 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+
+# Local logs and hardening backups
+/logs/
+*.log
+.aurix-launcher-backup-*/
+.aurix-milestone5-backup-*/
+.aurix-milestone6-backup-*/
+.ruff_cache/
+.mypy_cache/

@@ -105,3 +105,6 @@ Troubleshooting
 - Speech recognition errors: check internet connectivity and the configured AURIX_SPEECH_LANGUAGE locale.
 - Application not found: verify the app appears in the Windows Start Menu or is registered with Windows. Some packaged apps cannot be launched by a simple executable path.
 - No spoken response: set AURIX_TTS_ENABLED=true and confirm Windows has a working installed speech voice. The text response should still be printed in the terminal.
+## Production hardening (Milestone 6)
+
+AURIX uses standard-library logging with console output and bounded rotating diagnostic logs. Local quality checks and release-readiness guidance are documented in [`docs/PRODUCTION_HARDENING.md`](docs/PRODUCTION_HARDENING.md) and [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md). Install the pinned development tools with `python -m pip install -r requirements-dev.txt`; run `.\scripts\verify_release.ps1` from PowerShell. GitHub Actions runs automated tests and quality/security gates for pushes and pull requests.

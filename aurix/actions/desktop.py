@@ -382,7 +382,8 @@ def _registry_app_paths() -> dict[str, Path]:
                 index = 0
                 while True:
                     try:
-                        subkey_name = winreg.EnumKey(root, index); index += 1
+                        subkey_name = winreg.EnumKey(root, index)
+                        index += 1
                     except OSError:
                         break
                     try:
@@ -438,7 +439,8 @@ def _registry_installed_programs() -> tuple[tuple[str, Path], ...]:
                 index = 0
                 while True:
                     try:
-                        child_name = winreg.EnumKey(root, index); index += 1
+                        child_name = winreg.EnumKey(root, index)
+                        index += 1
                     except OSError:
                         break
                     try:

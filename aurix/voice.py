@@ -1,5 +1,6 @@
 """Microphone input, optional wake-word gating, and visible responses."""
 
+import logging
 import re
 import time
 from typing import Any
@@ -15,6 +16,7 @@ from aurix.config import (
     AURIX_WAKE_WORD,
 )
 
+logger = logging.getLogger(__name__)
 
 def extract_wake_command(
     transcript: str,
@@ -46,6 +48,7 @@ def _make_speaker() -> Any | None:
         engine.setProperty("rate", 175)
         return engine
     except Exception as exc:
+        logger.warning("TTS initialization failed (%s).", type(exc).__name__)
         print(f"[TTS Notice] Speech output is unavailable: {exc}", flush=True)
         return None
 
@@ -58,6 +61,7 @@ def _respond(text: str, speaker: Any | None) -> None:
             speaker.say(text)
             speaker.runAndWait()
         except Exception as exc:
+            logger.warning("TTS playback failed (%s).", type(exc).__name__)
             print(f"[TTS Notice] Could not speak the response: {exc}", flush=True)
 
 
@@ -70,6 +74,7 @@ def run_voice_loop() -> None:
     try:
         microphone = sr.Microphone()
     except (AttributeError, OSError) as exc:
+        logger.error("Microphone initialization failed (%s).", type(exc).__name__)
         print(
             f"[Microphone Error] {exc}\n"
             "Check PyAudio, the selected input device, and Windows microphone permissions.",
@@ -115,6 +120,7 @@ def run_voice_loop() -> None:
                     )
                     continue
                 except sr.RequestError as exc:
+                    logger.error("Speech recognition request failed (%s).", type(exc).__name__)
                     print(
                         f"[Speech Service Error] Recognition failed: {exc}. "
                         "Check your internet connection.",
@@ -167,6 +173,7 @@ def run_voice_loop() -> None:
     except KeyboardInterrupt:
         print("\n[AURIX] Stopped by user.", flush=True)
     except OSError as exc:
+        logger.error("Microphone loop failed (%s).", type(exc).__name__)
         print(
             f"[Microphone Error] {exc}\n"
             "Check your input device and Windows microphone permissions.",

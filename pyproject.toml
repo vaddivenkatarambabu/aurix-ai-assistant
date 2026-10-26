@@ -1,0 +1,7 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+# Start with high-signal correctness and common-style checks; broaden deliberately.
+select = ["E4", "E7", "E9", "F"]

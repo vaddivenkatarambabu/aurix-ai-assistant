@@ -1,9 +1,11 @@
 """AURIX voice assistant entry point."""
 
+from aurix.observability import configure_logging
 from aurix.voice import run_voice_loop
 
 
 def main() -> None:
+    configure_logging()
     print("=" * 48, flush=True)
     print("             AURIX AI ASSISTANT", flush=True)
     print("=" * 48, flush=True)
