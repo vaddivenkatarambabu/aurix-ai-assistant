@@ -54,6 +54,32 @@ class TestAurixAssistant(unittest.TestCase):
             assistant.ask(f"question {n}")
         self.assertEqual(len(assistant.history), 4)
 
+    def test_market_analysis_uses_only_source_data_and_does_not_mutate_history(self):
+        client = Mock()
+        client.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="The supplied observations show a positive change."))]
+        )
+        assistant = AurixAssistant(client=client, model="test-model", max_api_retries=0)
+        assistant.history = [{"role": "user", "content": "UNRELATED_PRIVATE_CONTEXT"}]
+        original_history = list(assistant.history)
+        payload = {
+            "source_facts": {"symbol": "IBM", "ohlcv": {"close": "100"}},
+            "derived_metrics": {"close_to_close_change_percent": {"value": "25.00"}},
+            "generated_analysis": {"status": "not_generated", "text": None},
+        }
+
+        answer = assistant.analyze_market_data(payload)
+
+        self.assertIn("positive change", answer)
+        messages = client.chat.completions.create.call_args.kwargs["messages"]
+        self.assertEqual(len(messages), 2)
+        self.assertIn("source_facts", messages[1]["content"])
+        self.assertIn("derived_metrics", messages[1]["content"])
+        self.assertNotIn("generated_analysis", messages[1]["content"])
+        self.assertNotIn("UNRELATED_PRIVATE_CONTEXT", str(messages))
+        self.assertIn("Do not give buy/sell/hold recommendations", messages[0]["content"])
+        self.assertEqual(assistant.history, original_history)
+
     def test_clear_history(self):
         assistant = AurixAssistant(client=Mock(), model="test-model")
         assistant.history = [{"role": "user", "content": "Hello"}]

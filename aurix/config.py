@@ -64,5 +64,23 @@ AURIX_MAX_API_RETRIES = _int_setting("AURIX_MAX_API_RETRIES", 1, minimum=0)
 AURIX_TTS_ENABLED = _bool_setting("AURIX_TTS_ENABLED", default=True)
 AURIX_LOG_LEVEL = os.getenv("AURIX_LOG_LEVEL", "INFO").upper()
 
+# Optional Alpha Vantage daily equity market-data integration.
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "").strip()
+AURIX_MARKET_DATA_BASE_URL = (
+    os.getenv("AURIX_MARKET_DATA_BASE_URL") or "https://www.alphavantage.co/query"
+).strip()
+AURIX_MARKET_DATA_TIMEOUT_SECONDS = _float_setting(
+    "AURIX_MARKET_DATA_TIMEOUT_SECONDS", 8.0
+)
+AURIX_MARKET_DATA_CACHE_TTL_SECONDS = _int_setting(
+    "AURIX_MARKET_DATA_CACHE_TTL_SECONDS", 300, minimum=0
+)
+AURIX_MARKET_DATA_MAX_AGE_DAYS = _int_setting(
+    "AURIX_MARKET_DATA_MAX_AGE_DAYS", 7, minimum=0
+)
+AURIX_MARKET_DATA_MAX_RETRIES = min(
+    _int_setting("AURIX_MARKET_DATA_MAX_RETRIES", 1, minimum=0), 3
+)
+
 # Backwards-compatible alias for older modules.
 OPENAI_API_KEY = AI_API_KEY
