@@ -108,3 +108,8 @@ Troubleshooting
 ## Production hardening (Milestone 6)
 
 AURIX uses standard-library logging with console output and bounded rotating diagnostic logs. Local quality checks and release-readiness guidance are documented in [`docs/PRODUCTION_HARDENING.md`](docs/PRODUCTION_HARDENING.md) and [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md). Install the pinned development tools with `python -m pip install -r requirements-dev.txt`; run `.\scripts\verify_release.ps1` from PowerShell. GitHub Actions runs automated tests and quality/security gates for pushes and pull requests.
+
+
+## Natural-language intent understanding
+
+Action-like requests that are not resolved by deterministic rules may be classified by the configured AI provider into a small, validated action schema. Only application opening, website opening, web search, YouTube search, clarification, or no-action outcomes are accepted. The classifier cannot return executable shell commands or launch arguments. Accepted actions are translated back through the existing desktop/browser router, which retains URL validation and no-shell execution safeguards. The feature requires the configured AI service and does not cover every phrasing; failures fall back to ordinary assistant handling. See [`docs/NATURAL_LANGUAGE_INTENTS.md`](docs/NATURAL_LANGUAGE_INTENTS.md).

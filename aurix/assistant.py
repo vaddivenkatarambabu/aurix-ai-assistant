@@ -7,6 +7,24 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aurix.actions.desktop import try_handle_desktop_command
+from aurix.intent import (
+    ActionIntent,
+    execute_action_intent,
+    interpret_action_intent,
+    should_attempt_desktop_interpretation,
+)
+from aurix.intent import (
+    ActionIntent,
+    execute_action_intent,
+    interpret_action_intent,
+    should_attempt_desktop_interpretation,
+)
+from aurix.intent import (
+    ActionIntent,
+    execute_action_intent,
+    interpret_action_intent,
+    should_attempt_desktop_interpretation,
+)
 
 from aurix.integrations.market_data import (
     MarketDataError,
@@ -276,6 +294,18 @@ class AurixAssistant:
                 raise AIServiceError(f"The AI provider returned HTTP {exc.status_code} during market analysis.") from exc
         raise AIServiceError("AURIX could not generate market commentary.")
 
+    def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
+        """Interpret action-like text; execution remains in the safe desktop router."""
+        return interpret_action_intent(prompt, client=self._get_client(), model=self.model)
+
+    def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
+        """Interpret action-like text; execution remains in the safe desktop router."""
+        return interpret_action_intent(prompt, client=self._get_client(), model=self.model)
+
+    def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
+        """Interpret action-like text; execution remains in the safe desktop router."""
+        return interpret_action_intent(prompt, client=self._get_client(), model=self.model)
+
     def clear_history(self) -> None:
         """Clear the in-memory conversation history."""
         self.history.clear()
@@ -330,6 +360,48 @@ def handle_command(command: str, language: str | None = None) -> str:
                     "input_refs": ["source_facts", "derived_metrics"],
                 }
             return format_market_data_response(payload)
+
+        if should_attempt_desktop_interpretation(command):
+            if _assistant is None:
+                _assistant = AurixAssistant()
+            intent = _assistant.interpret_desktop_intent(command)
+            if intent is not None and intent.action == "clarify":
+                return intent.clarification_question or "Could you clarify which application or website you mean?"
+            if intent is not None:
+                action_response = execute_action_intent(
+                    intent, try_handle_desktop_command, language=language
+                )
+                if action_response is not None:
+                    logger.info("Handled natural-language desktop intent: %s", intent.action)
+                    return action_response
+
+        if should_attempt_desktop_interpretation(command):
+            if _assistant is None:
+                _assistant = AurixAssistant()
+            intent = _assistant.interpret_desktop_intent(command)
+            if intent is not None and intent.action == "clarify":
+                return intent.clarification_question or "Could you clarify which application or website you mean?"
+            if intent is not None:
+                action_response = execute_action_intent(
+                    intent, try_handle_desktop_command, language=language
+                )
+                if action_response is not None:
+                    logger.info("Handled natural-language desktop intent: %s", intent.action)
+                    return action_response
+
+        if should_attempt_desktop_interpretation(command):
+            if _assistant is None:
+                _assistant = AurixAssistant()
+            intent = _assistant.interpret_desktop_intent(command)
+            if intent is not None and intent.action == "clarify":
+                return intent.clarification_question or "Could you clarify which application or website you mean?"
+            if intent is not None:
+                action_response = execute_action_intent(
+                    intent, try_handle_desktop_command, language=language
+                )
+                if action_response is not None:
+                    logger.info("Handled natural-language desktop intent: %s", intent.action)
+                    return action_response
 
         if _assistant is None:
             _assistant = AurixAssistant()
