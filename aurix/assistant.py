@@ -13,18 +13,6 @@ from aurix.intent import (
     interpret_action_intent,
     should_attempt_desktop_interpretation,
 )
-from aurix.intent import (
-    ActionIntent,
-    execute_action_intent,
-    interpret_action_intent,
-    should_attempt_desktop_interpretation,
-)
-from aurix.intent import (
-    ActionIntent,
-    execute_action_intent,
-    interpret_action_intent,
-    should_attempt_desktop_interpretation,
-)
 
 from aurix.integrations.market_data import (
     MarketDataError,
@@ -76,6 +64,7 @@ MARKET_ANALYSIS_SYSTEM_PROMPT = (
     "when the data cannot support a conclusion. This is informational analysis, not financial advice."
 )
 
+
 class AIConfigurationError(RuntimeError):
     """Raised when required AI configuration is missing."""
 
@@ -121,9 +110,7 @@ class AurixAssistant:
         self.model = (model or OPENAI_MODEL).strip()
         self.max_history_turns = max_history_turns or AURIX_MAX_HISTORY_TURNS
         self.timeout_seconds = timeout_seconds or AURIX_REQUEST_TIMEOUT_SECONDS
-        self.max_api_retries = (
-            AURIX_MAX_API_RETRIES if max_api_retries is None else max_api_retries
-        )
+        self.max_api_retries = AURIX_MAX_API_RETRIES if max_api_retries is None else max_api_retries
         self.history: list[dict[str, str]] = []
 
     def _get_client(self) -> Any:
@@ -236,7 +223,6 @@ class AurixAssistant:
 
         raise AIServiceError("AURIX could not complete the request.")
 
-
     def analyze_market_data(self, market_payload: dict[str, Any]) -> str:
         """Generate commentary from validated source facts without sending chat history."""
         try:
@@ -274,33 +260,41 @@ class AurixAssistant:
                 return answer
             except RateLimitError as exc:
                 if _looks_like_quota_error(exc):
-                    raise AIServiceError("AI market commentary is unavailable because the API quota may be exhausted.") from exc
+                    raise AIServiceError(
+                        "AI market commentary is unavailable because the API quota may be exhausted."
+                    ) from exc
                 if attempt >= self.max_api_retries:
-                    raise AIServiceError("AI market commentary is temporarily rate-limited.") from exc
+                    raise AIServiceError(
+                        "AI market commentary is temporarily rate-limited."
+                    ) from exc
                 delay = min(2**attempt, 3)
                 logger.warning("Market commentary rate-limited; retrying in %s second(s).", delay)
                 time.sleep(delay)
             except AuthenticationError as exc:
-                raise AIServiceError("AI market commentary could not authenticate; check AI_API_KEY.") from exc
+                raise AIServiceError(
+                    "AI market commentary could not authenticate; check AI_API_KEY."
+                ) from exc
             except PermissionDeniedError as exc:
-                raise AIServiceError("The AI provider denied access to the configured model.") from exc
+                raise AIServiceError(
+                    "The AI provider denied access to the configured model."
+                ) from exc
             except (APITimeoutError, APIConnectionError, InternalServerError) as exc:
                 if attempt >= self.max_api_retries:
-                    raise AIServiceError("AI market commentary timed out or the provider could not be reached.") from exc
+                    raise AIServiceError(
+                        "AI market commentary timed out or the provider could not be reached."
+                    ) from exc
                 delay = min(2**attempt, 3)
-                logger.warning("Temporary market-analysis failure (%s); retrying in %s second(s).", type(exc).__name__, delay)
+                logger.warning(
+                    "Temporary market-analysis failure (%s); retrying in %s second(s).",
+                    type(exc).__name__,
+                    delay,
+                )
                 time.sleep(delay)
             except APIStatusError as exc:
-                raise AIServiceError(f"The AI provider returned HTTP {exc.status_code} during market analysis.") from exc
+                raise AIServiceError(
+                    f"The AI provider returned HTTP {exc.status_code} during market analysis."
+                ) from exc
         raise AIServiceError("AURIX could not generate market commentary.")
-
-    def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
-        """Interpret action-like text; execution remains in the safe desktop router."""
-        return interpret_action_intent(prompt, client=self._get_client(), model=self.model)
-
-    def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
-        """Interpret action-like text; execution remains in the safe desktop router."""
-        return interpret_action_intent(prompt, client=self._get_client(), model=self.model)
 
     def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
         """Interpret action-like text; execution remains in the safe desktop router."""
@@ -340,7 +334,9 @@ def handle_command(command: str, language: str | None = None) -> str:
                     "status": "generated",
                     "text": analysis,
                     "model": _assistant.model,
-                    "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+                    "generated_at_utc": datetime.now(timezone.utc)
+                    .isoformat(timespec="seconds")
+                    .replace("+00:00", "Z"),
                     "input_refs": ["source_facts", "derived_metrics"],
                 }
             except (AIConfigurationError, AIServiceError) as exc:
@@ -366,7 +362,10 @@ def handle_command(command: str, language: str | None = None) -> str:
                 _assistant = AurixAssistant()
             intent = _assistant.interpret_desktop_intent(command)
             if intent is not None and intent.action == "clarify":
-                return intent.clarification_question or "Could you clarify which application or website you mean?"
+                return (
+                    intent.clarification_question
+                    or "Could you clarify which application or website you mean?"
+                )
             if intent is not None:
                 action_response = execute_action_intent(
                     intent, try_handle_desktop_command, language=language
@@ -380,7 +379,10 @@ def handle_command(command: str, language: str | None = None) -> str:
                 _assistant = AurixAssistant()
             intent = _assistant.interpret_desktop_intent(command)
             if intent is not None and intent.action == "clarify":
-                return intent.clarification_question or "Could you clarify which application or website you mean?"
+                return (
+                    intent.clarification_question
+                    or "Could you clarify which application or website you mean?"
+                )
             if intent is not None:
                 action_response = execute_action_intent(
                     intent, try_handle_desktop_command, language=language
@@ -394,7 +396,10 @@ def handle_command(command: str, language: str | None = None) -> str:
                 _assistant = AurixAssistant()
             intent = _assistant.interpret_desktop_intent(command)
             if intent is not None and intent.action == "clarify":
-                return intent.clarification_question or "Could you clarify which application or website you mean?"
+                return (
+                    intent.clarification_question
+                    or "Could you clarify which application or website you mean?"
+                )
             if intent is not None:
                 action_response = execute_action_intent(
                     intent, try_handle_desktop_command, language=language
