@@ -1,4 +1,5 @@
 """Deterministic unit tests for market-data validation and calculations."""
+
 from __future__ import annotations
 
 import unittest
@@ -28,7 +29,14 @@ def bar(open_, high, low, close, volume="1000"):
     }
 
 
-def valid_payload(latest_date="2026-10-23", previous_date="2026-10-22", *, timezone_name="US/Eastern", latest_close="100", previous_close="80"):
+def valid_payload(
+    latest_date="2026-10-23",
+    previous_date="2026-10-22",
+    *,
+    timezone_name="US/Eastern",
+    latest_close="100",
+    previous_close="80",
+):
     metadata = {"2. Symbol": "IBM"}
     if timezone_name is not None:
         metadata["5. Time Zone"] = timezone_name
@@ -138,9 +146,14 @@ class TestMarketData(unittest.TestCase):
         self.assertEqual(payload["source_facts"]["adjustment_status"], "unadjusted_raw")
         self.assertEqual(payload["source_facts"]["validation_status"], "validated")
         self.assertEqual(payload["derived_metrics"]["close_to_close_change"]["value"], "20")
-        self.assertEqual(payload["derived_metrics"]["close_to_close_change_percent"]["value"], "25.00")
+        self.assertEqual(
+            payload["derived_metrics"]["close_to_close_change_percent"]["value"], "25.00"
+        )
         self.assertEqual(payload["generated_analysis"]["status"], "not_generated")
-        self.assertEqual(payload["source_facts"]["observation_timestamp"]["semantics"], "date-only trading-session date; not a UTC instant")
+        self.assertEqual(
+            payload["source_facts"]["observation_timestamp"]["semantics"],
+            "date-only trading-session date; not a UTC instant",
+        )
         self.assertEqual(payload["source_facts"]["retrieval_timestamp_utc"], "2026-10-26T18:00:00Z")
 
     def test_stale_observation_is_marked(self):
@@ -163,7 +176,9 @@ class TestMarketData(unittest.TestCase):
 
     def test_out_of_order_observations_rejected(self):
         payload = valid_payload()
-        payload["Time Series (Daily)"] = dict(reversed(list(payload["Time Series (Daily)"].items())))
+        payload["Time Series (Daily)"] = dict(
+            reversed(list(payload["Time Series (Daily)"].items()))
+        )
         self.session.get.return_value = FakeResponse(payload)
         with self.assertRaises(MarketDataValidationError):
             self.provider.fetch_daily("IBM")
@@ -215,7 +230,9 @@ class TestMarketData(unittest.TestCase):
 
     def test_one_observation_has_no_derived_percent_change(self):
         payload = valid_payload()
-        payload["Time Series (Daily)"] = {"2026-10-23": payload["Time Series (Daily)"]["2026-10-23"]}
+        payload["Time Series (Daily)"] = {
+            "2026-10-23": payload["Time Series (Daily)"]["2026-10-23"]
+        }
         self.session.get.return_value = FakeResponse(payload)
         metrics = self.provider.fetch_daily("IBM").to_payload()["derived_metrics"]
         self.assertEqual(metrics["close_to_close_change_percent"]["status"], "unavailable")
@@ -271,7 +288,9 @@ class TestMarketData(unittest.TestCase):
     def test_market_command_parser_requires_explicit_intent(self):
         self.assertEqual(extract_market_data_symbol("stock aapl"), "AAPL")
         self.assertEqual(extract_market_data_symbol("market data for IBM"), "IBM")
-        self.assertEqual(extract_market_data_symbol("what is the stock price of SHOP.TO?"), "SHOP.TO")
+        self.assertEqual(
+            extract_market_data_symbol("what is the stock price of SHOP.TO?"), "SHOP.TO"
+        )
         self.assertEqual(extract_market_data_symbol("stock price of IBM"), "IBM")
         self.assertIsNone(extract_market_data_symbol("Should I buy IBM tomorrow?"))
         self.assertIsNone(extract_market_data_symbol("hello there"))

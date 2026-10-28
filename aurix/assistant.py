@@ -3,23 +3,9 @@
 import json
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
-
-from aurix.actions.desktop import try_handle_desktop_command
-from aurix.intent import (
-    ActionIntent,
-    execute_action_intent,
-    interpret_action_intent,
-    should_attempt_desktop_interpretation,
-)
-
-from aurix.integrations.market_data import (
-    MarketDataError,
-    extract_market_data_symbol,
-    fetch_daily_market_data,
-    format_market_data_response,
-)
 
 from openai import (
     APIConnectionError,
@@ -32,22 +18,44 @@ from openai import (
     RateLimitError,
 )
 
+from aurix.actions.desktop import try_handle_desktop_command
 from aurix.config import (
     AI_API_KEY,
     AI_BASE_URL,
     AURIX_MAX_API_RETRIES,
     AURIX_MAX_HISTORY_TURNS,
+    AURIX_MAX_RESPONSE_TOKENS,
     AURIX_REQUEST_TIMEOUT_SECONDS,
     OPENAI_MODEL,
+)
+from aurix.integrations.market_data import (
+    MarketDataError,
+    extract_market_data_symbol,
+    fetch_daily_market_data,
+    format_market_data_response,
+)
+from aurix.intent import (
+    ActionIntent,
+    execute_action_intent,
+    interpret_action_intent,
+    should_attempt_desktop_interpretation,
 )
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are AURIX, a personal AI assistant. Respond in clear, natural, concise language. "
+    "You are AURIX, a personal AI assistant that talks with the user. Answer the way a "
+    "knowledgeable person would explain something out loud: natural, direct, and friendly. "
+    "Match the length to the question: one to three sentences for simple questions; for a "
+    "concept such as 'What is software engineering?' explain it clearly in plain language "
+    "with one short concrete example, then stop and let the user ask for more. Use the "
+    "conversation so far to answer follow-up questions. Avoid filler openers and "
+    "repetition. Write plain sentences: no Markdown headings, tables, asterisks, or emoji, "
+    "and use a list only if the user asks for one. "
     "Respond in the same language and script as the user's latest message when possible. "
     "Support multilingual conversation including Telugu, Spanish, Hindi, and other languages. "
-    "Be honest about uncertainty. Do not claim to have launched an application unless the local "
+    "Be honest about uncertainty and say when you do not know instead of guessing. "
+    "Do not claim to have launched an application unless the local "
     "desktop action router reports that launch succeeded. Do not claim to have sent messages, "
     "changed files, or retrieved live data unless a real integration performed and verified it. "
     "Application launches and direct web/video searches are handled by the local action router. "
@@ -63,6 +71,9 @@ MARKET_ANALYSIS_SYSTEM_PROMPT = (
     "Do not treat end-of-day data as real-time data. Explain the available facts briefly and acknowledge "
     "when the data cannot support a conclusion. This is informational analysis, not financial advice."
 )
+
+
+_MARKET_ANALYSIS_MAX_TOKENS = 220
 
 
 class AIConfigurationError(RuntimeError):
@@ -89,6 +100,49 @@ def _looks_like_quota_error(exc: Exception) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class _ErrorText:
+    """User-facing wording for each failure mode of one kind of model request."""
+
+    quota: str
+    rate_limit: str
+    auth: str
+    permission: str
+    unreachable: str
+    status: str  # may contain {code}
+
+
+_CHAT_ERRORS = _ErrorText(
+    quota=(
+        "The API quota or billing limit may have been reached. "
+        "Check your provider's usage and billing dashboard."
+    ),
+    rate_limit="The AI provider is rate-limiting requests. Wait briefly and retry.",
+    auth="The provider rejected the API key. Check AI_API_KEY in .env.",
+    permission=(
+        "The API project cannot access this model or endpoint. "
+        "Check the provider, model ID, and project permissions."
+    ),
+    unreachable=(
+        "The AI service timed out or could not be reached. "
+        "Check internet access and provider status."
+    ),
+    status=(
+        "The AI provider returned HTTP {code}. "
+        "Check the model name, base URL, and request configuration."
+    ),
+)
+
+_MARKET_ERRORS = _ErrorText(
+    quota="AI market commentary is unavailable because the API quota may be exhausted.",
+    rate_limit="AI market commentary is temporarily rate-limited.",
+    auth="AI market commentary could not authenticate; check AI_API_KEY.",
+    permission="The AI provider denied access to the configured model.",
+    unreachable="AI market commentary timed out or the provider could not be reached.",
+    status="The AI provider returned HTTP {code} during market analysis.",
+)
+
+
 class AurixAssistant:
     """Maintain bounded conversation context in the running process."""
 
@@ -102,6 +156,7 @@ class AurixAssistant:
         max_history_turns: int | None = None,
         timeout_seconds: float | None = None,
         max_api_retries: int | None = None,
+        max_response_tokens: int | None = None,
     ) -> None:
         # Inject a mock client in tests so they never make paid requests.
         self.client = client
@@ -111,6 +166,7 @@ class AurixAssistant:
         self.max_history_turns = max_history_turns or AURIX_MAX_HISTORY_TURNS
         self.timeout_seconds = timeout_seconds or AURIX_REQUEST_TIMEOUT_SECONDS
         self.max_api_retries = AURIX_MAX_API_RETRIES if max_api_retries is None else max_api_retries
+        self.max_response_tokens = max_response_tokens or AURIX_MAX_RESPONSE_TOKENS
         self.history: list[dict[str, str]] = []
 
     def _get_client(self) -> Any:
@@ -138,90 +194,76 @@ class AurixAssistant:
         self.client = OpenAI(**options)
         return self.client
 
+    def _complete(self, messages: list[dict[str, str]], max_tokens: int, errors: _ErrorText) -> Any:
+        """Run one chat completion with bounded retries; map provider errors to plain messages."""
+        client = self._get_client()
+        for attempt in range(self.max_api_retries + 1):
+            try:
+                return client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_completion_tokens=max_tokens,
+                )
+            except RateLimitError as exc:
+                if _looks_like_quota_error(exc):
+                    raise AIServiceError(errors.quota) from exc
+                if attempt >= self.max_api_retries:
+                    raise AIServiceError(errors.rate_limit) from exc
+                reason = "Rate limited"
+            except AuthenticationError as exc:
+                raise AIServiceError(errors.auth) from exc
+            except PermissionDeniedError as exc:
+                raise AIServiceError(errors.permission) from exc
+            except (APITimeoutError, APIConnectionError, InternalServerError) as exc:
+                if attempt >= self.max_api_retries:
+                    raise AIServiceError(errors.unreachable) from exc
+                reason = f"Temporary API failure ({type(exc).__name__})"
+            except APIStatusError as exc:
+                request_id = getattr(exc, "request_id", None)
+                suffix = f" Request ID: {request_id}." if request_id else ""
+                raise AIServiceError(errors.status.format(code=exc.status_code) + suffix) from exc
+
+            delay = min(2**attempt, 3)
+            logger.warning("%s; retrying in %s second(s).", reason, delay)
+            time.sleep(delay)
+
+        raise AIServiceError("AURIX could not complete the request.")
+
     def ask(self, user_message: str) -> str:
         prompt = user_message.strip()
         if not prompt:
             return "Please tell me what you need."
 
-        client = self._get_client()
         messages: list[dict[str, str]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             *self.history,
             {"role": "user", "content": prompt},
         ]
+        result = self._complete(messages, self.max_response_tokens, _CHAT_ERRORS)
 
-        for attempt in range(self.max_api_retries + 1):
-            try:
-                result = client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_completion_tokens=350,
-                )
-                content = result.choices[0].message.content
-                answer = content.strip() if isinstance(content, str) else ""
-                if not answer:
-                    raise AIServiceError(
-                        "The AI service returned an empty answer. Please try again."
-                    )
-
-                # Store history only after a successful response.
-                self.history.extend(
-                    [
-                        {"role": "user", "content": prompt},
-                        {"role": "assistant", "content": answer},
-                    ]
-                )
-                self.history = self.history[-(self.max_history_turns * 2) :]
-                return answer
-
-            except RateLimitError as exc:
-                if _looks_like_quota_error(exc):
-                    raise AIServiceError(
-                        "The API quota or billing limit may have been reached. "
-                        "Check your provider's usage and billing dashboard."
-                    ) from exc
-                if attempt >= self.max_api_retries:
-                    raise AIServiceError(
-                        "The AI provider is rate-limiting requests. Wait briefly and retry."
-                    ) from exc
-                delay = min(2**attempt, 3)
-                logger.warning("Rate limited; retrying in %s second(s).", delay)
-                time.sleep(delay)
-
-            except AuthenticationError as exc:
+        choice = result.choices[0]
+        content = choice.message.content
+        answer = content.strip() if isinstance(content, str) else ""
+        finish_reason = getattr(choice, "finish_reason", None)
+        if not answer:
+            if finish_reason == "length":
                 raise AIServiceError(
-                    "The provider rejected the API key. Check AI_API_KEY in .env."
-                ) from exc
-
-            except PermissionDeniedError as exc:
-                raise AIServiceError(
-                    "The API project cannot access this model or endpoint. "
-                    "Check the provider, model ID, and project permissions."
-                ) from exc
-
-            except (APITimeoutError, APIConnectionError, InternalServerError) as exc:
-                if attempt >= self.max_api_retries:
-                    raise AIServiceError(
-                        "The AI service timed out or could not be reached. "
-                        "Check internet access and provider status."
-                    ) from exc
-                delay = min(2**attempt, 3)
-                logger.warning(
-                    "Temporary API failure (%s); retrying in %s second(s).",
-                    type(exc).__name__,
-                    delay,
+                    "The model used its whole response budget before answering. "
+                    "Increase AURIX_MAX_RESPONSE_TOKENS in .env."
                 )
-                time.sleep(delay)
+            raise AIServiceError("The AI service returned an empty answer. Please try again.")
+        if finish_reason == "length":
+            logger.warning("Answer was cut off at the response-token limit.")
 
-            except APIStatusError as exc:
-                request_id = getattr(exc, "request_id", None)
-                suffix = f" Request ID: {request_id}." if request_id else ""
-                raise AIServiceError(
-                    f"The AI provider returned HTTP {exc.status_code}. "
-                    f"Check the model name, base URL, and request configuration.{suffix}"
-                ) from exc
-
-        raise AIServiceError("AURIX could not complete the request.")
+        # Store history only after a successful response.
+        self.history.extend(
+            [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": answer},
+            ]
+        )
+        self.history = self.history[-(self.max_history_turns * 2) :]
+        return answer
 
     def analyze_market_data(self, market_payload: dict[str, Any]) -> str:
         """Generate commentary from validated source facts without sending chat history."""
@@ -245,56 +287,12 @@ class AurixAssistant:
                 ),
             },
         ]
-        client = self._get_client()
-        for attempt in range(self.max_api_retries + 1):
-            try:
-                result = client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_completion_tokens=220,
-                )
-                content = result.choices[0].message.content
-                answer = content.strip() if isinstance(content, str) else ""
-                if not answer:
-                    raise AIServiceError("The AI service returned empty market commentary.")
-                return answer
-            except RateLimitError as exc:
-                if _looks_like_quota_error(exc):
-                    raise AIServiceError(
-                        "AI market commentary is unavailable because the API quota may be exhausted."
-                    ) from exc
-                if attempt >= self.max_api_retries:
-                    raise AIServiceError(
-                        "AI market commentary is temporarily rate-limited."
-                    ) from exc
-                delay = min(2**attempt, 3)
-                logger.warning("Market commentary rate-limited; retrying in %s second(s).", delay)
-                time.sleep(delay)
-            except AuthenticationError as exc:
-                raise AIServiceError(
-                    "AI market commentary could not authenticate; check AI_API_KEY."
-                ) from exc
-            except PermissionDeniedError as exc:
-                raise AIServiceError(
-                    "The AI provider denied access to the configured model."
-                ) from exc
-            except (APITimeoutError, APIConnectionError, InternalServerError) as exc:
-                if attempt >= self.max_api_retries:
-                    raise AIServiceError(
-                        "AI market commentary timed out or the provider could not be reached."
-                    ) from exc
-                delay = min(2**attempt, 3)
-                logger.warning(
-                    "Temporary market-analysis failure (%s); retrying in %s second(s).",
-                    type(exc).__name__,
-                    delay,
-                )
-                time.sleep(delay)
-            except APIStatusError as exc:
-                raise AIServiceError(
-                    f"The AI provider returned HTTP {exc.status_code} during market analysis."
-                ) from exc
-        raise AIServiceError("AURIX could not generate market commentary.")
+        result = self._complete(messages, _MARKET_ANALYSIS_MAX_TOKENS, _MARKET_ERRORS)
+        content = result.choices[0].message.content
+        answer = content.strip() if isinstance(content, str) else ""
+        if not answer:
+            raise AIServiceError("The AI service returned empty market commentary.")
+        return answer
 
     def interpret_desktop_intent(self, prompt: str) -> ActionIntent | None:
         """Interpret action-like text; execution remains in the safe desktop router."""
@@ -308,9 +306,58 @@ class AurixAssistant:
 _assistant: AurixAssistant | None = None
 
 
-def handle_command(command: str, language: str | None = None) -> str:
-    """Route local desktop/video actions first; send all other text to the AI."""
+def _get_assistant() -> AurixAssistant:
+    """Return the process-wide assistant, creating it on first use."""
     global _assistant
+    if _assistant is None:
+        _assistant = AurixAssistant()
+    return _assistant
+
+
+def _market_data_response(symbol: str) -> str:
+    """Fetch daily market data and attach optional, clearly separated AI commentary."""
+    try:
+        snapshot = fetch_daily_market_data(symbol)
+    except MarketDataError as exc:
+        logger.warning("Market-data request failed: %s", exc)
+        return f"Market data unavailable: {exc}"
+
+    payload = snapshot.to_payload()
+    input_refs = ["source_facts", "derived_metrics"]
+    try:
+        assistant = _get_assistant()
+        analysis = assistant.analyze_market_data(payload)
+        payload["generated_analysis"] = {
+            "status": "generated",
+            "text": analysis,
+            "model": assistant.model,
+            "generated_at_utc": datetime.now(timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z"),
+            "input_refs": input_refs,
+        }
+    except (AIConfigurationError, AIServiceError) as exc:
+        logger.warning("AI analysis unavailable for market data: %s", exc)
+        reason = str(exc)
+    except Exception:
+        logger.exception("Unexpected error generating market-data analysis.")
+        reason = (
+            "AI analysis could not be generated; source facts and calculations remain available."
+        )
+    else:
+        reason = None
+    if reason is not None:
+        payload["generated_analysis"] = {
+            "status": "unavailable",
+            "text": None,
+            "reason": reason,
+            "input_refs": input_refs,
+        }
+    return format_market_data_response(payload)
+
+
+def handle_command(command: str, language: str | None = None) -> str:
+    """Route local actions and market data first; send all other text to the AI."""
     try:
         action_response = try_handle_desktop_command(command, language=language)
         if action_response is not None:
@@ -319,48 +366,10 @@ def handle_command(command: str, language: str | None = None) -> str:
 
         symbol = extract_market_data_symbol(command)
         if symbol is not None:
-            try:
-                snapshot = fetch_daily_market_data(symbol)
-            except MarketDataError as exc:
-                logger.warning("Market-data request failed: %s", exc)
-                return f"Market data unavailable: {exc}"
-
-            payload = snapshot.to_payload()
-            try:
-                if _assistant is None:
-                    _assistant = AurixAssistant()
-                analysis = _assistant.analyze_market_data(payload)
-                payload["generated_analysis"] = {
-                    "status": "generated",
-                    "text": analysis,
-                    "model": _assistant.model,
-                    "generated_at_utc": datetime.now(timezone.utc)
-                    .isoformat(timespec="seconds")
-                    .replace("+00:00", "Z"),
-                    "input_refs": ["source_facts", "derived_metrics"],
-                }
-            except (AIConfigurationError, AIServiceError) as exc:
-                logger.warning("AI analysis unavailable for market data: %s", exc)
-                payload["generated_analysis"] = {
-                    "status": "unavailable",
-                    "text": None,
-                    "reason": str(exc),
-                    "input_refs": ["source_facts", "derived_metrics"],
-                }
-            except Exception:
-                logger.exception("Unexpected error generating market-data analysis.")
-                payload["generated_analysis"] = {
-                    "status": "unavailable",
-                    "text": None,
-                    "reason": "AI analysis could not be generated; source facts and calculations remain available.",
-                    "input_refs": ["source_facts", "derived_metrics"],
-                }
-            return format_market_data_response(payload)
+            return _market_data_response(symbol)
 
         if should_attempt_desktop_interpretation(command):
-            if _assistant is None:
-                _assistant = AurixAssistant()
-            intent = _assistant.interpret_desktop_intent(command)
+            intent = _get_assistant().interpret_desktop_intent(command)
             if intent is not None and intent.action == "clarify":
                 return (
                     intent.clarification_question
@@ -374,43 +383,7 @@ def handle_command(command: str, language: str | None = None) -> str:
                     logger.info("Handled natural-language desktop intent: %s", intent.action)
                     return action_response
 
-        if should_attempt_desktop_interpretation(command):
-            if _assistant is None:
-                _assistant = AurixAssistant()
-            intent = _assistant.interpret_desktop_intent(command)
-            if intent is not None and intent.action == "clarify":
-                return (
-                    intent.clarification_question
-                    or "Could you clarify which application or website you mean?"
-                )
-            if intent is not None:
-                action_response = execute_action_intent(
-                    intent, try_handle_desktop_command, language=language
-                )
-                if action_response is not None:
-                    logger.info("Handled natural-language desktop intent: %s", intent.action)
-                    return action_response
-
-        if should_attempt_desktop_interpretation(command):
-            if _assistant is None:
-                _assistant = AurixAssistant()
-            intent = _assistant.interpret_desktop_intent(command)
-            if intent is not None and intent.action == "clarify":
-                return (
-                    intent.clarification_question
-                    or "Could you clarify which application or website you mean?"
-                )
-            if intent is not None:
-                action_response = execute_action_intent(
-                    intent, try_handle_desktop_command, language=language
-                )
-                if action_response is not None:
-                    logger.info("Handled natural-language desktop intent: %s", intent.action)
-                    return action_response
-
-        if _assistant is None:
-            _assistant = AurixAssistant()
-        return _assistant.ask(command)
+        return _get_assistant().ask(command)
 
     except (AIConfigurationError, AIServiceError) as exc:
         logger.warning("AURIX request failed: %s", exc)
