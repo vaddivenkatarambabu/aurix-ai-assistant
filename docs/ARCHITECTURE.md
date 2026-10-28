@@ -100,8 +100,9 @@ The cost is a short start-up pause (the worker imports the speech library) befor
 
 ### Project files
 
-`requirements.txt` (runtime), `requirements-dev.txt` (tests and tooling),
-`requirements-whisper.txt` (optional offline recognition), `pyproject.toml` (Ruff settings),
+`requirements.txt` (runtime), `requirements-dev.txt` (tests and quality tooling),
+`requirements-security.txt` (security auditor), `requirements-whisper.txt` (optional offline recognition),
+`pyproject.toml` (Ruff settings),
 `.env.example`, `.gitignore`, `.github/workflows/ci.yml`, `.github/dependabot.yml`, `LICENSE`,
 `CHANGELOG.md`, `docs/`.
 

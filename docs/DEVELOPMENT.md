@@ -15,7 +15,7 @@ Python **3.10 or newer** (CI runs 3.10 and 3.13 on Windows). Keep code compatibl
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v     # offline tests
 .\.venv\Scripts\python.exe -m ruff check aurix tests scripts     # lint (incl. import order)
 .\.venv\Scripts\python.exe -m ruff format aurix tests scripts    # auto-format
-.\scripts\verify_release.ps1                                     # everything, incl. pip-audit
+.\scripts\verify_release.ps1                                     # all applicable quality gates
 ```
 
 The tests mock paid or external services, desktop launches and the microphone. Spoken output is
@@ -42,9 +42,12 @@ the first place. The voice loop prints transcripts to the terminal only.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` compiles, tests, lints, format-checks, runs `pip check` and
-`pip-audit` on Windows for Python 3.10 and 3.13. Third-party actions are pinned to commit SHAs;
-Dependabot proposes weekly updates, which should be reviewed rather than auto-merged.
+`.github/workflows/ci.yml` compiles, tests, lints, format-checks and runs `pip check` on Windows
+for Python 3.10 and 3.13. It runs `pip-audit` on Python 3.13, where the patched `filelock`
+release is supported. The auditor is kept separate from `requirements-dev.txt` so its own
+dependency tree is not mistaken for the project dependency set. Third-party actions are pinned
+to commit SHAs; Dependabot proposes weekly updates, which should be reviewed rather than
+auto-merged.
 
 ## Known limitations
 

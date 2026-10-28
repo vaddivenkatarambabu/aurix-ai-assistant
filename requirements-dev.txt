@@ -2,6 +2,7 @@
 -r requirements.txt
 numpy>=1.26  # used by the Whisper engine tests
 
-# Pin quality tooling so CI and local checks use the same tool versions.
+# Pin non-security quality tooling so CI and local checks use the same versions.
+# Keep pip-audit separate in requirements-security.txt: the auditor must not
+# be part of the dependency set it audits.
 ruff==0.17.2
-pip-audit==2.10.1

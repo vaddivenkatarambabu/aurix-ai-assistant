@@ -129,9 +129,14 @@ API key).
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v   # 140 offline tests
-.\scripts\verify_release.ps1                                  # every quality gate
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v   # offline tests
+.\scripts\verify_release.ps1                                  # quality gates
 ```
+
+`pip-audit` is kept in `requirements-security.txt` so its own transitive dependencies are not
+included in the dependency set being audited. The verification script runs the security audit
+on Python 3.11+; GitHub Actions uses Python 3.13 for that gate while running the other checks
+on both Python 3.10 and 3.13.
 
 The tests use mocks and a stand-in speech engine: they need no microphone, speakers, network or
 API key. They cannot prove every Windows app launches or that your speakers work; use the

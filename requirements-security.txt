@@ -1,0 +1,3 @@
+# Security audit CLI. Keep this separate from requirements-dev.txt so
+# pip-audit does not audit its own dependency tree.
+pip-audit==2.10.1
