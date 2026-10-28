@@ -1,4 +1,5 @@
 """Offline tests for schema-validated natural-language action interpretation."""
+
 from __future__ import annotations
 
 import json
@@ -6,6 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+from aurix import intent as intent_module
 from aurix.intent import (
     ActionIntent,
     execute_action_intent,
@@ -58,7 +60,9 @@ class TestIntentValidation(unittest.TestCase):
         parsed = interpret_action_intent(
             "I need to use Google Chrome.", client=client, model="test-model"
         )
-        self.assertEqual(parsed, ActionIntent("open_application", target="Google Chrome", confidence=0.96))
+        self.assertEqual(
+            parsed, ActionIntent("open_application", target="Google Chrome", confidence=0.96)
+        )
         client.chat.completions.create.assert_called_once()
 
     def test_website_intent_is_validated(self):
@@ -90,7 +94,9 @@ class TestIntentValidation(unittest.TestCase):
 
     def test_confidence_outside_range_is_rejected(self):
         client = Mock()
-        client.chat.completions.create.return_value = response(intent("open_application", confidence=1.2))
+        client.chat.completions.create.return_value = response(
+            intent("open_application", confidence=1.2)
+        )
         self.assertIsNone(
             interpret_action_intent("Please launch Chrome", client=client, model="test-model")
         )
@@ -163,6 +169,63 @@ class TestSafeIntentExecution(unittest.TestCase):
         result = execute_action_intent(ActionIntent("none", confidence=0.9), executor)
         self.assertIsNone(result)
         executor.assert_not_called()
+
+
+class TestIntentProviderCompatibility(unittest.TestCase):
+    def setUp(self):
+        intent_module._JSON_MODE_REJECTED.clear()
+        self.addCleanup(intent_module._JSON_MODE_REJECTED.clear)
+
+    def test_rejected_json_mode_is_remembered_for_the_next_request(self):
+        class BadRequest(Exception):
+            status_code = 400
+
+        plain = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(intent("none"))))]
+        )
+        client = Mock()
+        client.chat.completions.create.side_effect = [BadRequest("json mode"), plain, plain]
+        interpret_action_intent("open chrome", client=client, model="m")
+        interpret_action_intent("open chrome", client=client, model="m")
+        calls = client.chat.completions.create.call_args_list
+        self.assertEqual(len(calls), 3)  # JSON attempt + plain retry, then plain only
+        self.assertNotIn("response_format", calls[2].kwargs)
+
+    def test_json_mode_400_retries_once_as_plain_text(self):
+        class BadRequest(Exception):
+            status_code = 400
+
+        client = Mock()
+        client.chat.completions.create.side_effect = [
+            BadRequest("response_format unsupported"),
+            SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="```json\n" + json.dumps(intent("open_application")) + "\n```"
+                        )
+                    )
+                ]
+            ),
+        ]
+        result = interpret_action_intent("open chrome", client=client, model="m")
+        self.assertEqual((result.action, result.target), ("open_application", "Google Chrome"))
+        self.assertEqual(client.chat.completions.create.call_count, 2)
+        self.assertNotIn("response_format", client.chat.completions.create.call_args_list[1].kwargs)
+
+    def test_non_400_errors_are_not_retried(self):
+        client = Mock()
+        client.chat.completions.create.side_effect = RuntimeError("network")
+        self.assertIsNone(interpret_action_intent("open chrome", client=client, model="m"))
+        self.assertEqual(client.chat.completions.create.call_count, 1)
+
+    def test_token_budget_leaves_room_for_reasoning_models(self):
+        client = Mock()
+        client.chat.completions.create.return_value = response(intent("none"))
+        interpret_action_intent("open chrome", client=client, model="m")
+        self.assertGreaterEqual(
+            client.chat.completions.create.call_args.kwargs["max_completion_tokens"], 600
+        )
 
 
 if __name__ == "__main__":

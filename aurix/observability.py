@@ -12,7 +12,10 @@ import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-_DEFAULT_LOG_DIR = Path("logs")
+# Anchored to the project folder so logs land in one place wherever AURIX is started from.
+_DEFAULT_LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
+# Libraries that log every request/COM step at INFO and drown out AURIX's own messages.
+_NOISY_LOGGERS = ("httpx", "httpcore", "openai", "comtypes", "urllib3")
 _DEFAULT_MAX_BYTES = 1_048_576
 _DEFAULT_BACKUP_COUNT = 3
 
@@ -129,6 +132,9 @@ def configure_logging(
             "File logging unavailable (%s); continuing with console logging.",
             type(exc).__name__,
         )
+
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(max(configured_level, logging.WARNING))
 
     root._aurix_logging_configured = True  # type: ignore[attr-defined]
     if level_warning:

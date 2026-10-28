@@ -1,4 +1,6 @@
+# Everything needed to run the test suite and the quality gates.
 -r requirements.txt
+numpy>=1.26  # used by the Whisper engine tests
 
 # Pin quality tooling so CI and local checks use the same tool versions.
 ruff==0.17.2

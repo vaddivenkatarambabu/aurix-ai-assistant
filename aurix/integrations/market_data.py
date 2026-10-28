@@ -5,6 +5,7 @@ Provider observations retain date-only semantics; application retrieval timestam
 stored separately in UTC. Source facts and application-derived calculations remain
 separate objects so generated commentary cannot overwrite either.
 """
+
 from __future__ import annotations
 
 import logging
@@ -12,7 +13,7 @@ import re
 import time
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Callable, Mapping
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -88,13 +89,9 @@ def _parse_decimal(value: Any, field: str) -> Decimal:
     try:
         result = Decimal(str(value).strip())
     except (InvalidOperation, ValueError, AttributeError) as exc:
-        raise MarketDataValidationError(
-            f"The provider returned an invalid {field} value."
-        ) from exc
+        raise MarketDataValidationError(f"The provider returned an invalid {field} value.") from exc
     if not result.is_finite() or result < 0:
-        raise MarketDataValidationError(
-            f"The provider returned an out-of-range {field} value."
-        )
+        raise MarketDataValidationError(f"The provider returned an out-of-range {field} value.")
     return result
 
 
@@ -126,7 +123,9 @@ class DailyBar:
         try:
             observed_on = date.fromisoformat(raw_date)
         except (TypeError, ValueError) as exc:
-            raise MarketDataValidationError("The provider returned an invalid observation date.") from exc
+            raise MarketDataValidationError(
+                "The provider returned an invalid observation date."
+            ) from exc
         if not isinstance(row, Mapping):
             raise MarketDataValidationError("The provider returned a malformed daily observation.")
 
@@ -272,19 +271,13 @@ class AlphaVantageProvider:
         self.api_key = ALPHA_VANTAGE_API_KEY if api_key is None else api_key.strip()
         self.base_url = (base_url or AURIX_MARKET_DATA_BASE_URL).strip()
         self.timeout_seconds = (
-            AURIX_MARKET_DATA_TIMEOUT_SECONDS
-            if timeout_seconds is None
-            else timeout_seconds
+            AURIX_MARKET_DATA_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
         )
-        self.max_age_days = (
-            AURIX_MARKET_DATA_MAX_AGE_DAYS if max_age_days is None else max_age_days
-        )
+        self.max_age_days = AURIX_MARKET_DATA_MAX_AGE_DAYS if max_age_days is None else max_age_days
         requested_retries = AURIX_MARKET_DATA_MAX_RETRIES if max_retries is None else max_retries
         self.max_retries = min(requested_retries, 3)  # hard cap prevents unbounded retry loops
         self.cache_ttl_seconds = (
-            AURIX_MARKET_DATA_CACHE_TTL_SECONDS
-            if cache_ttl_seconds is None
-            else cache_ttl_seconds
+            AURIX_MARKET_DATA_CACHE_TTL_SECONDS if cache_ttl_seconds is None else cache_ttl_seconds
         )
         self._cache: dict[str, tuple[float, MarketDataSnapshot]] = {}
         parsed_endpoint = urlparse(self.base_url)
@@ -327,7 +320,9 @@ class AlphaVantageProvider:
         # status on every cache hit in case the exchange-local date has changed.
         now = self.clock()
         if now.tzinfo is None or now.utcoffset() is None:
-            raise MarketDataConfigurationError("Market-data clock must return a timezone-aware timestamp.")
+            raise MarketDataConfigurationError(
+                "Market-data clock must return a timezone-aware timestamp."
+            )
         now = now.astimezone(timezone.utc)
         if snapshot.market_timezone:
             local_today = now.astimezone(ZoneInfo(snapshot.market_timezone)).date()
@@ -374,16 +369,24 @@ class AlphaVantageProvider:
             except (requests.Timeout, requests.ConnectionError) as exc:
                 if attempt < self.max_retries:
                     delay = min(2**attempt, 3)
-                    logger.warning("Transient market-data network failure; retrying in %s second(s).", delay)
+                    logger.warning(
+                        "Transient market-data network failure; retrying in %s second(s).", delay
+                    )
                     self.sleeper(delay)
                     continue
                 label = "timed out" if isinstance(exc, requests.Timeout) else "could not connect"
-                raise MarketDataProviderError(f"Alpha Vantage request {label} after bounded retries.") from exc
+                raise MarketDataProviderError(
+                    f"Alpha Vantage request {label} after bounded retries."
+                ) from exc
             except requests.HTTPError as exc:
                 status = getattr(getattr(exc, "response", None), "status_code", None)
                 if status is not None and status >= 500 and attempt < self.max_retries:
                     delay = min(2**attempt, 3)
-                    logger.warning("Alpha Vantage server error HTTP %s; retrying in %s second(s).", status, delay)
+                    logger.warning(
+                        "Alpha Vantage server error HTTP %s; retrying in %s second(s).",
+                        status,
+                        delay,
+                    )
                     self.sleeper(delay)
                     continue
                 if status in (401, 403):
@@ -397,7 +400,9 @@ class AlphaVantageProvider:
                 suffix = f" (HTTP {status})" if status is not None else ""
                 raise MarketDataProviderError(f"Alpha Vantage request failed{suffix}.") from exc
             except requests.RequestException as exc:
-                raise MarketDataProviderError("Alpha Vantage request failed due to a network error.") from exc
+                raise MarketDataProviderError(
+                    "Alpha Vantage request failed due to a network error."
+                ) from exc
 
             try:
                 payload = response.json()
@@ -430,13 +435,17 @@ class AlphaVantageProvider:
         if not isinstance(reported_symbol, str) or not reported_symbol.strip():
             raise MarketDataValidationError("Provider response is missing symbol metadata.")
         if reported_symbol.strip().upper() != normalized_symbol:
-            raise MarketDataValidationError("Provider symbol metadata does not match the requested ticker.")
+            raise MarketDataValidationError(
+                "Provider symbol metadata does not match the requested ticker."
+            )
 
         raw_dates = list(series.keys())
         try:
             dates = [date.fromisoformat(raw_date) for raw_date in raw_dates]
         except (TypeError, ValueError) as exc:
-            raise MarketDataValidationError("Provider returned an invalid daily observation date.") from exc
+            raise MarketDataValidationError(
+                "Provider returned an invalid daily observation date."
+            ) from exc
         if len(set(dates)) != len(dates):
             raise MarketDataValidationError("Provider returned duplicate daily observations.")
         if dates != sorted(dates, reverse=True):
@@ -453,13 +462,17 @@ class AlphaVantageProvider:
             try:
                 zone = ZoneInfo(market_timezone)
             except ZoneInfoNotFoundError as exc:
-                raise MarketDataValidationError("Provider returned an unknown market time zone.") from exc
+                raise MarketDataValidationError(
+                    "Provider returned an unknown market time zone."
+                ) from exc
         else:
             zone = None
 
         retrieved_at = self.clock()
         if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
-            raise MarketDataConfigurationError("Market-data clock must return a timezone-aware timestamp.")
+            raise MarketDataConfigurationError(
+                "Market-data clock must return a timezone-aware timestamp."
+            )
         retrieved_at = retrieved_at.astimezone(timezone.utc)
         if zone is not None:
             local_today = retrieved_at.astimezone(zone).date()
@@ -510,7 +523,9 @@ def format_market_data_response(payload: Mapping[str, Any]) -> str:
     values = facts["ohlcv"]
     observation = facts["observation_timestamp"]
     zone = observation.get("time_zone")
-    date_label = observation["value"] + (f" ({zone} session date)" if zone else " (date-only; time zone not supplied)")
+    date_label = observation["value"] + (
+        f" ({zone} session date)" if zone else " (date-only; time zone not supplied)"
+    )
     lines = [
         f"Market data — {facts['symbol']} (source-reported daily OHLCV)",
         f"Source: {facts['provider']} / {facts['source_reference']}",
@@ -532,7 +547,9 @@ def format_market_data_response(payload: Mapping[str, Any]) -> str:
             "this is still end-of-day data, not a live quote."
         )
     else:
-        lines.append("Freshness check: unknown because the provider did not supply a market time zone.")
+        lines.append(
+            "Freshness check: unknown because the provider did not supply a market time zone."
+        )
 
     absolute = metrics.get("close_to_close_change", {})
     percent = metrics.get("close_to_close_change_percent", {})
@@ -540,19 +557,23 @@ def format_market_data_response(payload: Mapping[str, Any]) -> str:
         refs = absolute.get("input_refs", [])
         date_detail = (
             f" from {refs[1]['observation_date']} to {refs[0]['observation_date']}"
-            if len(refs) >= 2 else ""
+            if len(refs) >= 2
+            else ""
         )
         lines.append(
             f"Calculated close-to-close change{date_detail}: {absolute['value']} provider price units "
             f"(formula: {absolute['formula']}; not a provider-reported field)."
         )
     else:
-        lines.append(f"Calculated close-to-close change: unavailable ({absolute.get('reason', 'insufficient inputs')}).")
+        lines.append(
+            f"Calculated close-to-close change: unavailable ({absolute.get('reason', 'insufficient inputs')})."
+        )
     if percent.get("status") == "calculated":
         refs = percent.get("input_refs", [])
         date_detail = (
             f" from {refs[1]['observation_date']} to {refs[0]['observation_date']}"
-            if len(refs) >= 2 else ""
+            if len(refs) >= 2
+            else ""
         )
         lines.append(
             f"Calculated close-to-close percentage change{date_detail}: {percent['value']}% "
@@ -565,9 +586,18 @@ def format_market_data_response(payload: Mapping[str, Any]) -> str:
         )
 
     if generated.get("status") == "generated" and generated.get("text"):
-        lines.extend(["AI-generated analysis (separate from source facts and calculations):", generated["text"]])
+        lines.extend(
+            [
+                "AI-generated analysis (separate from source facts and calculations):",
+                generated["text"],
+            ]
+        )
     elif generated.get("status") == "unavailable" and generated.get("reason"):
-        lines.append(f"AI-generated analysis unavailable: {generated['reason']} Source facts and calculations remain available above.")
+        lines.append(
+            f"AI-generated analysis unavailable: {generated['reason']} Source facts and calculations remain available above."
+        )
     else:
-        lines.append("AI-generated analysis: not generated; source facts and calculations are shown above.")
+        lines.append(
+            "AI-generated analysis: not generated; source facts and calculations are shown above."
+        )
     return "\n".join(lines)

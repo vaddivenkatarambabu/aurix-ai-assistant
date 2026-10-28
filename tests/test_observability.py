@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 from aurix.observability import (

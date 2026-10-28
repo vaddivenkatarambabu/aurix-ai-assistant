@@ -15,10 +15,12 @@ dist/
 .env.*
 !.env.example
 
-# Test output
+# Test and lint output
 .pytest_cache/
 .coverage
 htmlcov/
+.ruff_cache/
+.mypy_cache/
 
 # Editors and operating systems
 .vscode/
@@ -26,12 +28,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-
-# Local logs and hardening backups
+# Local logs, backups and recordings
 /logs/
 *.log
-.aurix-launcher-backup-*/
-.aurix-milestone5-backup-*/
-.aurix-milestone6-backup-*/
-.ruff_cache/
-.mypy_cache/
+*.backup-*
+/samples/
