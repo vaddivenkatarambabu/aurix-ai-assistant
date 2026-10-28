@@ -1,6 +1,6 @@
 # Runtime dependencies for AURIX (Windows, Python 3.10 or newer).
 openai>=2.0.0
-python-dotenv>=1.0.0
+python-dotenv>=1.2.4
 SpeechRecognition>=3.10.0
 PyAudio>=0.2.14
 pyttsx3>=2.90
