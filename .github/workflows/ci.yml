@@ -20,9 +20,13 @@ concurrency:
 
 jobs:
   quality:
-    name: Tests and quality gates (Windows / Python 3.13)
+    name: Tests and quality gates (Windows / Python ${{ matrix.python-version }})
     runs-on: windows-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -30,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -43,16 +47,16 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
 
       - name: Compile application and tests
-        run: python -m compileall -q aurix tests
+        run: python -m compileall -q aurix tests scripts
 
       - name: Run offline automated tests
         run: python -m unittest discover -s tests -v
 
       - name: Check code style
-        run: ruff check aurix tests
+        run: ruff check aurix tests scripts
 
-      - name: Check formatter on Milestone 6 files
-        run: ruff format --check aurix/main.py aurix/observability.py tests/test_observability.py
+      - name: Check formatting
+        run: ruff format --check aurix tests scripts
 
       - name: Check dependency consistency
         run: python -m pip check

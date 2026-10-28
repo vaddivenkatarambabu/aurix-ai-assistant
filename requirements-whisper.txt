@@ -1,0 +1,2 @@
+# Optional: local, offline speech recognition (set AURIX_STT_ENGINE=whisper or auto in .env).
+faster-whisper>=1.0.0

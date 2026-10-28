@@ -1,4 +1,5 @@
 """Offline tests for application and website resolution; no real launches."""
+
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -15,7 +16,10 @@ class TestDesktopActions(unittest.TestCase):
         open_url.assert_called_once_with("https://www.youtube.com/")
 
     @patch("aurix.actions.desktop._launch_app", return_value=True)
-    @patch("aurix.actions.desktop._find_installed_app", return_value=desktop.InstalledApp("WhatsApp", "appid", "WhatsApp.App"))
+    @patch(
+        "aurix.actions.desktop._find_installed_app",
+        return_value=desktop.InstalledApp("WhatsApp", "appid", "WhatsApp.App"),
+    )
     @patch("aurix.actions.desktop._open_url")
     def test_explicit_app_wins_over_website(self, open_url, find_app, launch):
         result = desktop.handle_desktop_command("open WhatsApp app")
@@ -24,7 +28,10 @@ class TestDesktopActions(unittest.TestCase):
         open_url.assert_not_called()
 
     @patch("aurix.actions.desktop._launch_app", return_value=True)
-    @patch("aurix.actions.desktop._find_installed_app", return_value=desktop.InstalledApp("WhatsApp", "appid", "WhatsApp.App"))
+    @patch(
+        "aurix.actions.desktop._find_installed_app",
+        return_value=desktop.InstalledApp("WhatsApp", "appid", "WhatsApp.App"),
+    )
     def test_action_response_uses_selected_spanish_language(self, find_app, launch):
         result = desktop.handle_desktop_command("open WhatsApp app", language="es-ES")
         self.assertIn("Abriendo la aplicación instalada", result)
@@ -69,7 +76,9 @@ class TestDesktopActions(unittest.TestCase):
     def test_telugu_open_command_is_parsed(self):
         self.assertEqual(desktop.parse_open_request("వాట్సాప్ తెరువు"), "whatsapp")
 
-    @patch("aurix.actions.desktop._windows_start_apps", return_value=(("WhatsApp", "WhatsApp.App"),))
+    @patch(
+        "aurix.actions.discovery._windows_start_apps", return_value=(("WhatsApp", "WhatsApp.App"),)
+    )
     def test_dynamic_start_app_inventory(self, _apps):
         self.assertEqual(desktop._find_start_app_id("whatsapp"), ("WhatsApp", "WhatsApp.App"))
 
@@ -95,7 +104,10 @@ class TestDesktopActions(unittest.TestCase):
         open_url.assert_called_once_with("https://www.google.com/")
         find_app.assert_not_called()
 
-    @patch("aurix.actions.desktop._find_installed_app", return_value=desktop.InstalledApp("Chrome", "executable", "C:/Chrome/chrome.exe"))
+    @patch(
+        "aurix.actions.desktop._find_installed_app",
+        return_value=desktop.InstalledApp("Chrome", "executable", "C:/Chrome/chrome.exe"),
+    )
     @patch("aurix.actions.desktop._launch_app", return_value=True)
     @patch("aurix.actions.desktop._open_url")
     def test_explicit_chrome_app_launches_installed_application(self, open_url, launch, _find_app):
@@ -140,6 +152,55 @@ class TestDesktopActions(unittest.TestCase):
         result = desktop.handle_desktop_command("open UnknownThing app")
         self.assertIn("couldn't open", result)
         popen.assert_not_called()
+
+    @patch("aurix.actions.desktop._open_url", return_value=True)
+    @patch("aurix.actions.desktop._launch_app", return_value=True)
+    @patch("aurix.actions.desktop._find_installed_app")
+    def test_brand_with_desktop_client_prefers_installed_app(self, find_app, launch, open_url):
+        find_app.return_value = desktop.InstalledApp("Spotify", "appid", "Spotify.App")
+        result = desktop.handle_desktop_command("open spotify")
+        self.assertIn("Spotify", result)
+        launch.assert_called_once()
+        open_url.assert_not_called()
+
+    @patch("aurix.actions.desktop._open_url", return_value=True)
+    @patch("aurix.actions.desktop._launch_app")
+    @patch("aurix.actions.desktop._find_installed_app", return_value=None)
+    def test_brand_with_desktop_client_falls_back_to_website(self, _find_app, launch, open_url):
+        desktop.handle_desktop_command("open spotify")
+        launch.assert_not_called()
+        open_url.assert_called_once_with("https://open.spotify.com/")
+
+    @patch("aurix.actions.desktop._open_url", return_value=True)
+    @patch("aurix.actions.desktop._find_installed_app")
+    def test_web_only_service_never_probes_for_a_desktop_app(self, find_app, open_url):
+        desktop.handle_desktop_command("open youtube")
+        find_app.assert_not_called()
+        open_url.assert_called_once_with("https://www.youtube.com/")
+
+
+class TestConversationIsNotHijacked(unittest.TestCase):
+    """Chat that merely starts with open/show/start/run must reach the AI, not 'not found'."""
+
+    @patch("aurix.actions.desktop._find_installed_app", return_value=None)
+    @patch("aurix.actions.desktop._open_url", return_value=True)
+    def test_sentences_that_start_with_an_action_verb_fall_through(self, open_url, find_app):
+        for sentence in (
+            "show me a joke",
+            "start explaining python to me",
+            "run it again",
+            "start over",
+            "show me how recursion works",
+            "open source licenses explained simply",
+        ):
+            self.assertIsNone(desktop.handle_desktop_command(sentence), sentence)
+        open_url.assert_not_called()
+
+    @patch("aurix.actions.desktop._find_installed_app", return_value=None)
+    @patch("aurix.actions.desktop._open_url", return_value=True)
+    def test_short_unknown_app_names_still_get_a_clear_not_found(self, open_url, find_app):
+        self.assertIn("was not found", desktop.handle_desktop_command("open frobnicator"))
+        self.assertIn("was not found", desktop.handle_desktop_command("start frobnicator pro"))
 
 
 if __name__ == "__main__":
